@@ -148,7 +148,6 @@
     <div class="grid3">
       <button class="tile c3" onclick="startTwoDots()"><span class="emo">🔵</span>Two Dots</button>
       <button class="tile c1" onclick="startDotLink()"><span class="emo">🔗</span>Dot Link</button>
-      <button class="tile c4" onclick="startLudo()"><span class="emo">🎲</span>Ludo</button>
       <button class="tile c5" onclick="startSnake()"><span class="emo">🐍</span>Snake & Ladder</button>
       <button class="tile c6" onclick="startJigsaw()"><span class="emo">🧩</span>Jigsaw</button>
       <button class="tile c2" onclick="startSlide()"><span class="emo">🔢</span>Slide</button>
@@ -654,36 +653,45 @@ function nextOrder(){
   };$('ordC').appendChild(btn);});
 }
 
-/* ---- Two Dots (join same-color dots) ---- */
+/* ---- Two Dots (drag to connect; make a square to clear a whole color) ---- */
 const TD_COLORS=['#e74c3c','#3498db','#2ecc71','#f1c40f','#9b59b6'];
-const TD_COLS=6,TD_ROWS=6;
-let tdGrid=[],tdChain=[],tdPops=0,tdGoal=6;
-function startTwoDots(){show('puzzle');$('pzTitle').textContent='🔵 Two Dots';tdPops=0;tdGoal=6;tdGrid=[];for(let i=0;i<TD_COLS*TD_ROWS;i++)tdGrid.push(rand(0,TD_COLORS.length-1));tdChain=[];renderTwoDots();}
-function tdAdj(a,b){const ra=Math.floor(a/TD_COLS),ca=a%TD_COLS,rb=Math.floor(b/TD_COLS),cb=b%TD_COLS;return Math.abs(ra-rb)+Math.abs(ca-cb)===1;}
+const TD_N=6;
+let tdGrid=[],tdPath=[],tdSquare=false,tdColorIdx=-1,tdSize=0,tdDrag=false,tdPops=0,tdGoal=8,tdSvg=null,tdDots=[],tdWinBound=false;
+function startTwoDots(){show('puzzle');$('pzTitle').textContent='🔵 Two Dots';tdPops=0;tdGoal=8;tdGrid=[];for(let i=0;i<TD_N*TD_N;i++)tdGrid.push(rand(0,TD_COLORS.length-1));tdPath=[];tdSquare=false;renderTwoDots();}
+function tdAdj(a,b){const ra=Math.floor(a/TD_N),ca=a%TD_N,rb=Math.floor(b/TD_N),cb=b%TD_N;return Math.abs(ra-rb)+Math.abs(ca-cb)===1;}
+function tdCenter(i){const r=Math.floor(i/TD_N),c=i%TD_N;return[(c+0.5)*tdSize,(r+0.5)*tdSize];}
+function tdCellAt(x,y){const c=Math.floor(x/tdSize),r=Math.floor(y/tdSize);if(c<0||c>=TD_N||r<0||r>=TD_N)return -1;const cx=(c+0.5)*tdSize,cy=(r+0.5)*tdSize;if(Math.hypot(x-cx,y-cy)>tdSize*0.46)return -1;return r*TD_N+c;}
 function renderTwoDots(){
-  $('pzText').innerHTML=`Join dots of the same color!  ⭐ ${tdPops}/${tdGoal}`;
-  const W=Math.min(330,window.innerWidth-70);
-  let html=`<div style="display:grid;grid-template-columns:repeat(${TD_COLS},1fr);gap:8px;width:${W}px;margin:10px auto;">`;
-  for(let i=0;i<tdGrid.length;i++){const on=tdChain.includes(i);html+=`<div data-i="${i}" style="aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;cursor:pointer;"><div style="width:${on?'82%':'66%'};height:${on?'82%':'66%'};border-radius:50%;background:${TD_COLORS[tdGrid[i]]};box-shadow:${on?'0 0 0 4px #333':'0 2px 4px rgba(0,0,0,.2)'};transition:all .1s;"></div></div>`;}
-  html+=`</div><div class="tools"><button class="tbtn" style="font-size:20px" onclick="tdPop()">✨ Pop!</button><button class="tbtn" onclick="startTwoDots()">🔄 New</button></div>`;
-  $('pzArea').innerHTML=html;
-  $('pzArea').querySelectorAll('[data-i]').forEach(d=>d.onclick=()=>tdTap(+d.dataset.i));
+  $('pzText').innerHTML=`Drag to join same colors. Make a <b>square</b> to clear a whole color!  ⭐ ${tdPops}/${tdGoal}`;
+  const W=Math.min(330,window.innerWidth-70);tdSize=W/TD_N;
+  let dots='';
+  for(let i=0;i<tdGrid.length;i++){const rad=tdSize*0.3,[x,y]=tdCenter(i);dots+=`<div data-d="${i}" style="position:absolute;left:${x-rad}px;top:${y-rad}px;width:${rad*2}px;height:${rad*2}px;border-radius:50%;background:${TD_COLORS[tdGrid[i]]};transition:box-shadow .05s;"></div>`;}
+  $('pzArea').innerHTML=`<div id="tdBoard" style="position:relative;width:${W}px;height:${W}px;margin:10px auto;touch-action:none;user-select:none;"><svg width="${W}" height="${W}" style="position:absolute;left:0;top:0;pointer-events:none;"></svg>${dots}</div><div class="tools"><button class="tbtn" onclick="startTwoDots()">🔄 New</button></div>`;
+  const bd=$('tdBoard');tdSvg=bd.querySelector('svg');tdDots=[...bd.querySelectorAll('[data-d]')];
+  bindTwoDots(bd);tdDrawLine();
 }
-function tdTap(i){
-  if(tdChain.length===0){tdChain=[i];renderTwoDots();return;}
-  const last=tdChain[tdChain.length-1];
-  if(i===last){tdPop();return;}
-  if(tdGrid[i]===tdGrid[tdChain[0]]&&tdAdj(i,last)&&!tdChain.includes(i)){tdChain.push(i);renderTwoDots();}
-  else{tdChain=[i];renderTwoDots();}
+function tdDrawLine(){
+  if(tdSvg){if(tdPath.length){const pts=tdPath.map(i=>tdCenter(i).join(',')).join(' ');tdSvg.innerHTML=`<polyline points="${pts}" fill="none" stroke="${TD_COLORS[tdColorIdx]}" stroke-width="${tdSize*0.16}" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`;}else tdSvg.innerHTML='';}
+  tdDots.forEach((d,i)=>{d.style.boxShadow=tdPath.includes(i)?'0 0 0 4px rgba(0,0,0,.28)':'none';});
 }
-function tdPop(){
-  if(tdChain.length>=2){
-    const removed=new Set(tdChain);
-    for(let c=0;c<TD_COLS;c++){const keep=[];for(let r=TD_ROWS-1;r>=0;r--){const idx=r*TD_COLS+c;if(!removed.has(idx))keep.push(tdGrid[idx]);}while(keep.length<TD_ROWS)keep.push(rand(0,TD_COLORS.length-1));for(let r=TD_ROWS-1,k=0;r>=0;r--,k++)tdGrid[r*TD_COLS+c]=keep[k];}
-    tdPops++;addStar();tdChain=[];
-    if(tdPops>=tdGoal){renderTwoDots();celebrate('🎉 You win!');return;}
-    celebrate();renderTwoDots();
-  }else{tdChain=[];renderTwoDots();}
+function bindTwoDots(bd){
+  const pos=e=>{const r=bd.getBoundingClientRect();const t=e.touches&&e.touches[0]?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};};
+  const down=e=>{e.preventDefault();const p=pos(e);const cell=tdCellAt(p.x,p.y);if(cell<0)return;tdDrag=true;tdColorIdx=tdGrid[cell];tdPath=[cell];tdSquare=false;tdDrawLine();};
+  const move=e=>{if(!tdDrag)return;e.preventDefault();const p=pos(e);const cell=tdCellAt(p.x,p.y);if(cell<0||tdSquare)return;const head=tdPath[tdPath.length-1];if(cell===head)return;if(tdGrid[cell]!==tdColorIdx||!tdAdj(cell,head))return;
+    if(tdPath.length>=2&&cell===tdPath[tdPath.length-2]){tdPath.pop();tdDrawLine();return;}
+    if(tdPath.indexOf(cell)>=0){tdPath.push(cell);tdSquare=true;tdDrawLine();return;}
+    tdPath.push(cell);tdDrawLine();};
+  bd.addEventListener('mousedown',down);bd.addEventListener('mousemove',move);
+  bd.addEventListener('touchstart',down,{passive:false});bd.addEventListener('touchmove',move,{passive:false});
+  if(!tdWinBound){tdWinBound=true;const up=()=>{if(tdDrag){tdDrag=false;tdResolve();}};window.addEventListener('mouseup',up);window.addEventListener('touchend',up);}
+}
+function tdGravity(removed){for(let c=0;c<TD_N;c++){const keep=[];for(let r=TD_N-1;r>=0;r--){const idx=r*TD_N+c;if(!removed.has(idx))keep.push(tdGrid[idx]);}while(keep.length<TD_N)keep.push(rand(0,TD_COLORS.length-1));for(let r=TD_N-1,k=0;r>=0;r--,k++)tdGrid[r*TD_N+c]=keep[k];}}
+function tdResolve(){
+  if(tdSquare){const removed=new Set();for(let i=0;i<tdGrid.length;i++)if(tdGrid[i]===tdColorIdx)removed.add(i);tdGravity(removed);tdPops++;addStar(2);tdPath=[];tdSquare=false;
+    if(tdPops>=tdGoal){renderTwoDots();celebrate('🎉 You win!');return;}renderTwoDots();celebrate('🟪 Square! Color gone!');return;}
+  if(tdPath.length>=2){tdGravity(new Set(tdPath));tdPops++;addStar();tdPath=[];
+    if(tdPops>=tdGoal){renderTwoDots();celebrate('🎉 You win!');return;}renderTwoDots();celebrate();return;}
+  tdPath=[];renderTwoDots();
 }
 
 /* ---- Dot Link (connect matching dots) ---- */
@@ -735,57 +743,39 @@ function renderLink(){
   $('pzArea').querySelectorAll('[data-i]').forEach(d=>d.onclick=()=>linkTap(+d.dataset.i));
 }
 
-/* ---- Snakes & Ladders (vs robot) ---- */
-const SL_L={2:15,5:14,9:21,18:29},SL_S={17:4,24:11,28:13,26:6},SL_MAX=30;
+/* ---- Snakes & Ladders (1-100, lots of random snakes/ladders, vs robot) ---- */
 const DICE=['⚀','⚁','⚂','⚃','⚄','⚅'];
-let slP,slC,slBusy,slDone,slMsg;
-function startSnake(){show('puzzle');$('pzTitle').textContent='🐍 Snakes & Ladders';slP=1;slC=1;slBusy=false;slDone=false;slMsg='You 🔴 vs Robot 🔵 — tap 🎲!';renderSnake();}
+const SL_MAX=100,SL_C=10,SL_ROWS=10;
+let SL_L={},SL_S={},slP,slC,slBusy,slDone,slMsg;
+function slRow(n){return Math.floor((n-1)/SL_C);}
+function genBoard(){
+  SL_L={};SL_S={};const used=new Set([1,SL_MAX]);
+  let made=0,tries=0;
+  while(made<10&&tries<600){tries++;const start=rand(2,88);if(used.has(start))continue;const end=start+rand(8,30);if(end>=SL_MAX||used.has(end))continue;if(slRow(end)<=slRow(start))continue;SL_L[start]=end;used.add(start);used.add(end);made++;}
+  made=0;tries=0;
+  while(made<10&&tries<600){tries++;const start=rand(12,99);if(used.has(start))continue;const end=start-rand(8,30);if(end<2||used.has(end))continue;if(slRow(end)>=slRow(start))continue;SL_S[start]=end;used.add(start);used.add(end);made++;}
+}
+function startSnake(){show('puzzle');$('pzTitle').textContent='🐍 Snakes & Ladders';genBoard();slP=0;slC=0;slBusy=false;slDone=false;slMsg='You 🔴 vs Robot 🔵 — reach 100! Tap 🎲';renderSnake();}
 function slApply(p){return SL_L[p]||SL_S[p]||p;}
 function slMove(who){
-  const die=rand(1,6);let pos=who==='p'?slP:slC;let np=pos+die;if(np>SL_MAX)np=SL_MAX;const after=slApply(np);
-  let note=`${who==='p'?'You':'Robot'} rolled ${DICE[die-1]} → ${np}`;if(after>np)note+=' 🪜 up!';else if(after<np)note+=' 🐍 down!';
+  const die=rand(1,6);let pos=who==='p'?slP:slC;let np=pos+die;let after;
+  let note=`${who==='p'?'You':'Robot'} rolled ${DICE[die-1]}`;
+  if(np>SL_MAX){after=pos;note+=` — too high, stay at ${pos}`;}
+  else{after=slApply(np);note+=` → ${np}`;if(after>np)note+=' 🪜 up!';else if(after<np)note+=' 🐍 down!';}
   if(who==='p')slP=after;else slC=after;slMsg=note;
-  if(after>=SL_MAX){slDone=true;slMsg=who==='p'?'🎉 You WIN!':'🤖 Robot wins! Tap 🔄';if(who==='p')addStar(3),celebrate('🎉 You win!');}
+  if(after===SL_MAX){slDone=true;slMsg=who==='p'?'🎉 You WIN!':'🤖 Robot wins! Tap 🔄';if(who==='p')addStar(3),celebrate('🎉 You win!');}
   renderSnake();
 }
-function rollSnake(){if(slBusy||slDone)return;slBusy=true;slMove('p');if(slDone){slBusy=false;return;}setTimeout(()=>{if(!slDone)slMove('c');slBusy=false;},900);}
+function rollSnake(){if(slBusy||slDone)return;slBusy=true;slMove('p');if(slDone){slBusy=false;return;}setTimeout(()=>{if(!slDone)slMove('c');slBusy=false;},850);}
 function renderSnake(){
-  const R=6,C=5,cells=[];
+  const R=SL_ROWS,C=SL_C,cells=[];
   for(let dr=0;dr<R;dr++){const rfb=R-1-dr,base=rfb*C,nums=[];for(let c=0;c<C;c++)nums.push(base+c+1);if(rfb%2===1)nums.reverse();cells.push(...nums);}
-  const W=Math.min(340,window.innerWidth-60);
+  const W=Math.min(370,window.innerWidth-40);
   $('pzText').innerHTML=slMsg;
-  let html=`<div style="display:grid;grid-template-columns:repeat(${C},1fr);gap:3px;width:${W}px;margin:8px auto;">`;
+  let html=`<div style="display:grid;grid-template-columns:repeat(${C},1fr);gap:2px;width:${W}px;margin:8px auto;">`;
   cells.forEach(n=>{let mark=SL_L[n]?'🪜':SL_S[n]?'🐍':(n===SL_MAX?'🏁':'');let toks='';if(slP===n)toks+='🔴';if(slC===n)toks+='🔵';const bg=n===SL_MAX?'#ffe8a3':SL_L[n]?'#e4f7ec':SL_S[n]?'#ffecec':'#f3ece3';
-    html+=`<div style="aspect-ratio:1/1;background:${bg};border-radius:8px;position:relative;display:flex;align-items:center;justify-content:center;font-size:18px;"><span style="position:absolute;top:1px;left:3px;font-size:11px;font-weight:800;color:#999">${n}</span>${mark}<span style="position:absolute;bottom:0;right:2px;font-size:15px">${toks}</span></div>`;});
-  html+=`</div><div class="tools"><button class="tbtn" style="font-size:22px" onclick="rollSnake()">🎲 Roll</button><button class="tbtn" onclick="startSnake()">🔄 New</button></div>`;
-  $('pzArea').innerHTML=html;
-}
-
-/* ---- Ludo Race (vs robot, roll 6 to start) ---- */
-function ringPath(n){const p=[];for(let c=0;c<n;c++)p.push([0,c]);for(let r=1;r<n;r++)p.push([r,n-1]);for(let c=n-2;c>=0;c--)p.push([n-1,c]);for(let r=n-2;r>=1;r--)p.push([r,0]);return p;}
-let luP,luC,luBusy,luDone,luMsg;
-function startLudo(){show('puzzle');$('pzTitle').textContent='🎲 Ludo Race';luP=-1;luC=-1;luBusy=false;luDone=false;luMsg='Roll a 6 to start! 🔴 you · 🔵 robot';renderLudo();}
-function luStep(who){
-  const die=rand(1,6);let pos=who==='p'?luP:luC;let note=`${who==='p'?'You':'Robot'} rolled ${DICE[die-1]}`;
-  if(pos<0){if(die===6){pos=0;note+=' — go! 🚀';}else note+=' — need a 6';}
-  else{pos+=die;if(pos>=24){pos=24;note+=' — 🏁 home!';}}
-  if(who==='p')luP=pos;else luC=pos;luMsg=note;
-  if(pos>=24){luDone=true;luMsg=who==='p'?'🎉 You WIN!':'🤖 Robot wins! Tap 🔄';if(who==='p')addStar(3),celebrate('🎉 You win!');}
-  renderLudo();
-}
-function rollLudo(){if(luBusy||luDone)return;luBusy=true;luStep('p');if(luDone){luBusy=false;return;}setTimeout(()=>{if(!luDone)luStep('c');luBusy=false;},900);}
-function renderLudo(){
-  const n=7,path=ringPath(n),W=Math.min(330,window.innerWidth-60),START_P=0,START_C=12;
-  $('pzText').innerHTML=luMsg;
-  const pidx={};path.forEach((p,i)=>pidx[p[0]*n+p[1]]=i);
-  const tokens={};if(luP>=0&&luP<24)tokens[(START_P+luP)%24]='🔴';if(luC>=0&&luC<24)tokens[(START_C+luC)%24]=(tokens[(START_C+luC)%24]||'')+'🔵';
-  let html=`<div style="display:grid;grid-template-columns:repeat(${n},1fr);gap:3px;width:${W}px;margin:8px auto;">`;
-  for(let r=0;r<n;r++)for(let c=0;c<n;c++){const key=r*n+c,i=pidx[key];
-    if(i!==undefined){let bg=i===START_P?'#ffd6d6':i===START_C?'#d6e4ff':'#f3ece3';html+=`<div style="aspect-ratio:1/1;background:${bg};border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;">${tokens[i]||''}</div>`;}
-    else if(r===3&&c===3){let fin='';if(luP>=24)fin+='🔴';if(luC>=24)fin+='🔵';html+=`<div style="aspect-ratio:1/1;background:#ffe8a3;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:19px;">${fin||'🏁'}</div>`;}
-    else{let bg=r<3&&c<3?'#ffecec':r<3&&c>3?'#e8eeff':r>3&&c<3?'#eafbe9':r>3&&c>3?'#f3e8ff':'#fff';let t='';if(r===1&&c===1&&luP<0)t='🔴';if(r===1&&c===5&&luC<0)t='🔵';html+=`<div style="aspect-ratio:1/1;background:${bg};border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;">${t}</div>`;}
-  }
-  html+=`</div><div class="tools"><button class="tbtn" style="font-size:22px" onclick="rollLudo()">🎲 Roll</button><button class="tbtn" onclick="startLudo()">🔄 New</button></div>`;
+    html+=`<div style="aspect-ratio:1/1;background:${bg};border-radius:5px;position:relative;display:flex;align-items:center;justify-content:center;font-size:14px;"><span style="position:absolute;top:0;left:2px;font-size:8px;font-weight:800;color:#aaa">${n}</span>${mark}<span style="position:absolute;bottom:-1px;right:1px;font-size:12px">${toks}</span></div>`;});
+  html+=`</div><div style="text-align:center;font-size:13px;color:#9a8b80;margin-top:4px">🪜 ${Object.keys(SL_L).length} ladders · 🐍 ${Object.keys(SL_S).length} snakes</div><div class="tools"><button class="tbtn" style="font-size:22px" onclick="rollSnake()">🎲 Roll</button><button class="tbtn" onclick="startSnake()">🔄 New Board</button></div>`;
   $('pzArea').innerHTML=html;
 }
 
